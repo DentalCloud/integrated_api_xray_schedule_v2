@@ -39,7 +39,7 @@ def restore_model_from_b64():
     # 載入 state_dict 權重
     model_base.load_state_dict(torch.load("xray_classifier.pt", map_location=torch.device("cpu")))
     model_base.eval()
-    model = model_base
+    model = model_base  # ✅ 必要：將還原的模型指定給全域變數
 
 def save_temp_image(message_id: str) -> str:
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
