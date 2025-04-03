@@ -6,11 +6,11 @@ import requests
 from PIL import Image
 from io import BytesIO
 import torch
-from torchvision import transforms
+from torchvision import transforms, models
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload  # 修正引用
+from googleapiclient.http import MediaFileUpload
 
 load_dotenv()
 
@@ -24,7 +24,7 @@ model = None
 def restore_model_from_b64():
     global model
     if model is not None:
-        return  # 已還原過
+        return
 
     with open("xray_classifier.pt.b64", "rb") as f:
         b64_data = f.read()
@@ -32,8 +32,14 @@ def restore_model_from_b64():
     with open("xray_classifier.pt", "wb") as f:
         f.write(binary_data)
 
-    model = torch.load("xray_classifier.pt", map_location=torch.device("cpu"))
-    model.eval()
+    # 還原 MobileNetV2 架構
+    model_base = models.mobilenet_v2(pretrained=False)
+    model_base.classifier[1] = torch.nn.Linear(model_base.last_channel, 3)
+
+    # 載入 state_dict 權重
+    model_base.load_state_dict(torch.load("xray_classifier.pt", map_location=torch.device("cpu")))
+    model_base.eval()
+    model = model_base
 
 def save_temp_image(message_id: str) -> str:
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
