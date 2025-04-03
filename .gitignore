@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+.env.example
+drive_service.json
+credentials.json
+xray_classifier.pt
+xray_classifier.pt.b64
+xray_classifier.pt.b64.txt
+/tmp/
