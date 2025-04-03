@@ -1,0 +1,13 @@
+flask
+line-bot-sdk
+python-dotenv
+gspread
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+Pillow
+torch
+torchvision
+requests
+gunicorn
