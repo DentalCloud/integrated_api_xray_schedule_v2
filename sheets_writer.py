@@ -1,23 +1,31 @@
-# 放置位置：sheets_writer.py（專案根目錄）
+# 放置位置：sheets_writer.py
 
 import os
-import gspread
 from google.oauth2.service_account import Credentials
-from calendar_sync import sync_sheet_to_calendar
+from googleapiclient.discovery import build
+from dotenv import load_dotenv
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+load_dotenv()
 
-SPREADSHEET_ID = "1IHl6XMlnN5ZsYGm1bEnwhgEvn_4TVVO4Useqxd04u7Y"
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 
-def write_to_sheet(data: list[list[str]]) -> None:
-    creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
-    client = gspread.authorize(creds)
-    sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+def write_schedule_to_sheet(rows: list) -> None:
+    if not rows:
+        return
 
-    # 將每筆資料寫入新列
-    for row in data:
-        if len(row) >= 3:
-            sheet.append_row(row)
+    creds = Credentials.from_service_account_file("credentials.json")
+    service = build("sheets", "v4", credentials=creds)
 
-    # 寫入完成後，同步至 Google Calendar
-    sync_sheet_to_calendar()
+    sheet = service.spreadsheets()
+    body = {"values": rows}
+
+    # 寫入到第 1 個工作表（假設為 A:B 欄）
+    result = sheet.values().append(
+        spreadsheetId=SPREADSHEET_ID,
+        range="A:B",
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body=body
+    ).execute()
+
+    print(f"{result.get('updates').get('updatedCells')} cells appended.")
