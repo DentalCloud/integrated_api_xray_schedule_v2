@@ -7,7 +7,7 @@ from sheets_writer import write_schedule_to_sheet
 from xray_classifier import classify_image
 from utils import save_temp_image, upload_image_to_drive, restore_model_from_b64
 from dotenv import load_dotenv
-
+ 
 load_dotenv()
 
 app = Flask(__name__)
