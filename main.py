@@ -4,10 +4,10 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage, ImageMessage
 from schedule_parser import parse_schedule_text
 from sheets_writer import write_schedule_to_sheet
-from xray_classifier import classify_image
-from utils import save_temp_image, upload_image_to_drive, restore_model_from_b64
+from async_worker import handle_image_async
 from dotenv import load_dotenv
- 
+from utils import restore_model_from_b64
+
 load_dotenv()
 
 app = Flask(__name__)
@@ -37,9 +37,9 @@ def handle_text_message(event):
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image_message(event):
     message_id = event.message.id
-    image_path = save_temp_image(message_id)
-    label = classify_image(image_path)
-    upload_image_to_drive(image_path, label)
+    handle_image_async(message_id)  # ✅ 非同步處理
+    # 回覆立刻送出，避免 timeout
+    return
 
 @app.route("/", methods=["GET"])
 def index():
