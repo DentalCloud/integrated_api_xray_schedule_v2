@@ -28,6 +28,7 @@ def restore_model_from_b64():
     state_dict = torch.load(buffer, map_location=torch.device("cpu"))
 
     model = models.mobilenet_v2(weights=None)
+    model.classifier[1] = torch.nn.Linear(model.last_channel, 3)  # 修正分類輸出
     model.load_state_dict(state_dict)
     model.eval()
     _model = model
