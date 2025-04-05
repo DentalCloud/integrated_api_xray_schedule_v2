@@ -1,76 +1,72 @@
-# 放置位置：utils.py（專案根目錄）
-
 import os
+import io
 import base64
-import requests
-from PIL import Image
-from io import BytesIO
 import torch
-from torchvision import transforms, models
-from dotenv import load_dotenv
+from torchvision import models, transforms
+from PIL import Image
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-load_dotenv()
+_model = None  # 全域模型快取
 
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-X_FOLDER_ID = os.getenv("X_FOLDER_ID")
-INTRAORAL_FOLDER_ID = os.getenv("INTRAORAL_FOLDER_ID")
-OTHERS_FOLDER_ID = os.getenv("OTHERS_FOLDER_ID")
-
-model = None
+def get_model():
+    global _model
+    if _model is None:
+        restore_model_from_b64()
+    return _model
 
 def restore_model_from_b64():
-    global model
-    if model is not None:
+    global _model
+    if _model is not None:
         return
 
-    with open("xray_classifier.pt.b64", "rb") as f:
-        b64_data = f.read()
-    binary_data = base64.b64decode(b64_data)
-    with open("xray_classifier.pt", "wb") as f:
-        f.write(binary_data)
+    with open("xray_classifier.pt.b64", "r") as f:
+        b64data = f.read()
 
-    # 還原 MobileNetV2 架構
-    model_base = models.mobilenet_v2(pretrained=False)
-    model_base.classifier[1] = torch.nn.Linear(model_base.last_channel, 3)
+    buffer = io.BytesIO(base64.b64decode(b64data))
+    state_dict = torch.load(buffer, map_location=torch.device("cpu"))
 
-    # 載入 state_dict 權重
-    model_base.load_state_dict(torch.load("xray_classifier.pt", map_location=torch.device("cpu")))
-    model_base.eval()
-    model = model_base  # ✅ 必要：將還原的模型指定給全域變數
+    model = models.mobilenet_v2(weights=None)
+    model.load_state_dict(state_dict)
+    model.eval()
+    _model = model
 
-def save_temp_image(message_id: str) -> str:
-    headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
-    url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
-    response = requests.get(url, headers=headers)
+def classify_image(image_path):
+    model = get_model()
 
-    image_path = f"/tmp/{message_id}.jpg"
-    with open(image_path, "wb") as f:
-        f.write(response.content)
-    return image_path
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+    ])
 
-def download_line_image(message_id: str) -> Image.Image:
-    headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
-    url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
-    response = requests.get(url, headers=headers)
-    return Image.open(BytesIO(response.content)).convert("RGB")
+    image = Image.open(image_path).convert("RGB")
+    input_tensor = transform(image).unsqueeze(0)
 
-def upload_image_to_drive(image_path: str, label: str) -> None:
-    folder_map = {
-        "xray": X_FOLDER_ID,
-        "intraoral": INTRAORAL_FOLDER_ID,
-        "others": OTHERS_FOLDER_ID
-    }
-    folder_id = folder_map.get(label, OTHERS_FOLDER_ID)
+    with torch.no_grad():
+        outputs = model(input_tensor)
+        predicted = torch.argmax(outputs, dim=1).item()
 
+    labels = ["xray", "intraoral", "others"]
+    return labels[predicted]
+
+def save_temp_image(message_id):
+    from linebot import LineBotApi
+    line_bot_api = LineBotApi(os.getenv("LINE_CHANNEL_ACCESS_TOKEN"))
+
+    message_content = line_bot_api.get_message_content(message_id)
+    temp_path = f"temp_{message_id}.jpg"
+    with open(temp_path, "wb") as f:
+        for chunk in message_content.iter_content():
+            f.write(chunk)
+    return temp_path
+
+def upload_image_to_drive(image_path, label):
+    folder_id = os.getenv(f"FOLDER_ID_{label.upper()}")
     creds = Credentials.from_service_account_file("credentials.json")
     service = build("drive", "v3", credentials=creds)
 
-    file_metadata = {
-        "name": os.path.basename(image_path),
-        "parents": [folder_id]
-    }
+    file_metadata = {"name": os.path.basename(image_path), "parents": [folder_id]}
     media = MediaFileUpload(image_path, mimetype="image/jpeg")
-    service.files().create(body=file_metadata, media_body=media).execute()
+
+    service.files().create(body=file_metadata, media_body=media, fields="id").execute()
